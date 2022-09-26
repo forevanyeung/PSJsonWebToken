@@ -11,6 +11,8 @@
         The hash algorithim for the signature. Acceptable values are SHA256, SHA384, and SHA512.
     .PARAMETER SigningCertificate
         The certificate containing the private key that will sign the JSON Web Token.
+    .PARAMETER PrivateKey
+        The RSA private key as a byte array that will sign the JSON Web Token.
     .PARAMETER Key
         The secret key used to generate the HMAC signature.
     .PARAMETER SkipJwtStructureTest
@@ -52,6 +54,9 @@
 
         [Parameter(Mandatory=$true,ParameterSetName="RSA",Position=2)][Alias("Certificate", "Cert")]
         [System.Security.Cryptography.X509Certificates.X509Certificate2]$SigningCertificate,
+
+        [Parameter(Mandatory=$true,ParameterSetName="RSAKey",Position=2)]
+        [Bytes[]]$PrivateKey,
 
         [Parameter(Mandatory = $true, ParameterSetName = "HMAC", Position = 3)]
         [ValidateLength(1, 32768)]
@@ -102,7 +107,14 @@
         {
             try
             {
-                $jwtSignature = New-JwtRsaSignature -JsonWebToken $JsonWebToken -SigningCertificate $SigningCertificate -HashAlgorithm $HashAlgorithm
+                if ($PSCmdlet.ParameterSetName -eq "RSA") 
+                {
+                    $jwtSignature = New-JwtRsaSignature -JsonWebToken $JsonWebToken -SigningCertificate $SigningCertificate -HashAlgorithm $HashAlgorithm
+                }
+                else
+                {
+                    $jwtSignature = New-JwtRsaSignature -JsonWebToken $JsonWebToken -PrivateKey $PrivateKey -HashAlgorithm $HashAlgorithm
+                }
             }
             catch
             {

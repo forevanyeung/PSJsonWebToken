@@ -12,14 +12,17 @@
         [Parameter(Mandatory=$true,ValueFromPipeline=$false,Position=0)]
         [ValidateLength(16,8192)][Alias("JWT", "Token")][String]$JsonWebToken,
 
-        [Parameter(Mandatory=$true,Position=1)][Alias("Certificate", "Cert")]
+        [Parameter(Mandatory=$true,ParameterSetName="Certificate",Position=1)][Alias("Certificate", "Cert")]
         [System.Security.Cryptography.X509Certificates.X509Certificate2]$SigningCertificate,
+
+        [Parameter(Mandatory=$true,ParameterSetName="PrivateKey",Position=1)]
+        [Bytes[]]$PrivateKey,
 
         [Parameter(Position=2,Mandatory=$true)]
         [ValidateSet("SHA256","SHA384","SHA512")]
         [String]$HashAlgorithm,
 
-        [Parameter(Position=3,Mandatory=$false)]
+        [Parameter(ParameterSetName="Certificate",Position=3,Mandatory=$false)]
         [Switch]$VerifyCertificate
     )
 
@@ -45,42 +48,47 @@
 
         $thumbprint = $SigningCertificate.Thumbprint
 
-        if ($PSBoundParameters.ContainsKey($VerifyCertificate))
-        {
-            if (!($SigningCertificate.Verify()))
-            {
-                $verificationErrorMessage = "Certificate with thumbprint {0} failed verification. Check certificate chain, expiration, and CRL access." -f $thumbprint
-                Write-Error -Exception ([CryptographicException]::new($verificationErrorMessage)) -Category SecurityError -ErrorAction Stop
-            }
-        }
-
         # Create an instance of the RSAPKCS1SignatureFormatter class that will ultimately be used to generate the signature:
         $rsaSigFormatter = [RSAPKCS1SignatureFormatter]::new()
 
-        # Determine if executing context has read access to private key:
-        [bool]$certHasPrivateKey = $false
-        if ($null -ne $SigningCertificate.PrivateKey.KeyExchangeAlgorithm)
+        if ($PSCmdlet.ParameterSetName -eq "Certificate") 
         {
-            $certHasPrivateKey = $true
-        }
-
-        # Exception message for missing or inaccessible private key:
-        $privateKeyErrorMessage = "Private key either not found or inaccessible for certificate with thumbprint {0}." -f $thumbprint
-
-        if ($certHasPrivateKey)
-        {
-            try
+            if ($PSBoundParameters.ContainsKey($VerifyCertificate))
             {
-                $rsaSigFormatter.SetKey($SigningCertificate.PrivateKey)
+                if (!($SigningCertificate.Verify()))
+                {
+                    $verificationErrorMessage = "Certificate with thumbprint {0} failed verification. Check certificate chain, expiration, and CRL access." -f $thumbprint
+                    Write-Error -Exception ([CryptographicException]::new($verificationErrorMessage)) -Category SecurityError -ErrorAction Stop
+                }
             }
-            catch
+
+            # Determine if executing context has read access to private key:
+            [bool]$certHasPrivateKey = $false
+            if ($null -ne $SigningCertificate.PrivateKey.KeyExchangeAlgorithm)
+            {
+                $certHasPrivateKey = $true
+            }
+
+            # Exception message for missing or inaccessible private key:
+            $privateKeyErrorMessage = "Private key either not found or inaccessible for certificate with thumbprint {0}." -f $thumbprint
+
+            if ($certHasPrivateKey)
+            {
+                try
+                {
+                    $rsaSigFormatter.SetKey($SigningCertificate.PrivateKey)
+                }
+                catch
+                {
+                    Write-Error -Exception ([CryptographicException]::new($privateKeyErrorMessage)) -Category SecurityError -ErrorAction Stop
+                }
+            }
+            else
             {
                 Write-Error -Exception ([CryptographicException]::new($privateKeyErrorMessage)) -Category SecurityError -ErrorAction Stop
             }
-        }
-        else
-        {
-            Write-Error -Exception ([CryptographicException]::new($privateKeyErrorMessage)) -Category SecurityError -ErrorAction Stop
+        } else {
+            $rsaSigFormatter.SetKey($PrivateKey)
         }
 
         # Set the RSA hash algorithm based on the RsaHashAlgorithm passed:

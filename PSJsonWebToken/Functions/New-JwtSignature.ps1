@@ -56,7 +56,7 @@
         [System.Security.Cryptography.X509Certificates.X509Certificate2]$SigningCertificate,
 
         [Parameter(Mandatory=$true,ParameterSetName="RSAKey",Position=2)]
-        [Bytes[]]$PrivateKey,
+        [Byte[]]$PrivateKey,
 
         [Parameter(Mandatory = $true, ParameterSetName = "HMAC", Position = 3)]
         [ValidateLength(1, 32768)]

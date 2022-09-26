@@ -16,7 +16,7 @@
         [System.Security.Cryptography.X509Certificates.X509Certificate2]$SigningCertificate,
 
         [Parameter(Mandatory=$true,ParameterSetName="PrivateKey",Position=1)]
-        [Bytes[]]$PrivateKey,
+        [Byte[]]$PrivateKey,
 
         [Parameter(Position=2,Mandatory=$true)]
         [ValidateSet("SHA256","SHA384","SHA512")]
@@ -88,7 +88,9 @@
                 Write-Error -Exception ([CryptographicException]::new($privateKeyErrorMessage)) -Category SecurityError -ErrorAction Stop
             }
         } else {
-            $rsaSigFormatter.SetKey($PrivateKey)
+            $rsaProvider = [System.Security.Cryptography.RSACryptoServiceProvider]::new()
+            $rsaProvider.ImportPkcs8PrivateKey($PrivateKey, [ref] $null)
+            $rsaSigFormatter.SetKey($rsaProvider)
         }
 
         # Set the RSA hash algorithm based on the RsaHashAlgorithm passed:

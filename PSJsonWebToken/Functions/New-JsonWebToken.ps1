@@ -8,6 +8,8 @@ function New-JsonWebToken {
         The claims for the token expressed as a hash table.
     .PARAMETER SigningCertificate
         The certificate containing the private key that will sign the JSON Web Token.
+    .PARAMETER PrivateKey
+        The RSA private key as a byte array that will sign the JSON Web Token.
     .PARAMETER TimeToLive
         The lifetime of the token expressed in seconds.
     .PARAMETER HashAlgorithm
@@ -78,6 +80,9 @@ function New-JsonWebToken {
         [Parameter(Mandatory = $true, ParameterSetName = "RSA", Position = 4)][Alias("Certificate", "Cert")]
         [System.Security.Cryptography.X509Certificates.X509Certificate2]$SigningCertificate,
 
+        [Parameter(Mandatory=$true,ParameterSetName="RSAKey",Position=4)]
+        [Byte[]]$PrivateKey,
+
         [Parameter(Mandatory = $false, Position = 5)]
         [ValidateRange(1, 2147483647)]
         [System.Int32]$TimeToLive = 300,
@@ -123,13 +128,7 @@ function New-JsonWebToken {
             }
         }
 
-        if ($PSCmdlet.ParameterSetName -eq "RSA") {
-            if ($null -eq $SigningCertificate.PrivateKey.KeyExchangeAlgorithm) {
-                $cryptographicExceptionMessage = "Private key either not found or inaccessible for certificate with thumbprint: {0} " -f $SigningCertificate.Thumbprint
-                $CryptographicException = New-Object -TypeName System.Security.Cryptography.CryptographicException -ArgumentList $cryptographicExceptionMessage
-                Write-Error -Exception $CryptographicException -Category SecurityError -ErrorAction Stop
-            }
-
+        if (($PSCmdlet.ParameterSetName -eq "RSA") -or ($PSCmdlet.ParameterSetName -eq "RSAKey")) {
             #1. Construct header:
             [string]$rsaAlg = ""
             switch ($HashAlgorithm) {
@@ -139,9 +138,22 @@ function New-JsonWebToken {
                 default { $rsaAlg = "RS256" }
             }
 
-            $encodedThumbprint = ConvertTo-Base64UrlEncodedString -Bytes $SigningCertificate.GetCertHash()
+            if ($PSCmdlet.ParameterSetName -eq "RSA") 
+            {
+                if ($null -eq $SigningCertificate.PrivateKey.KeyExchangeAlgorithm) {
+                    $cryptographicExceptionMessage = "Private key either not found or inaccessible for certificate with thumbprint: {0} " -f $SigningCertificate.Thumbprint
+                    $CryptographicException = New-Object -TypeName System.Security.Cryptography.CryptographicException -ArgumentList $cryptographicExceptionMessage
+                    Write-Error -Exception $CryptographicException -Category SecurityError -ErrorAction Stop
+                }
 
-            $headerTable = [ordered]@{typ = "JWT"; alg = $rsaAlg; x5t = $encodedThumbprint; kid = $encodedThumbprint }
+                $encodedThumbprint = ConvertTo-Base64UrlEncodedString -Bytes $SigningCertificate.GetCertHash()
+
+                $headerTable = [ordered]@{typ = "JWT"; alg = $rsaAlg; x5t = $encodedThumbprint; kid = $encodedThumbprint }
+            } 
+            else 
+            {
+                $headerTable = [ordered]@{typ = "JWT"; alg = $rsaAlg }
+            }
 
             if ($PSBoundParameters.ContainsKey("JwkUri")) {
                 $headerTable.Add("jku", $JwkUri)
@@ -154,7 +166,15 @@ function New-JsonWebToken {
             $jwtSansSig = "{0}.{1}" -f $header, $payload
 
             #4. Generate signature for concatenated header and payload:
-            $rsaSig = New-JwtSignature -JsonWebToken $jwtSansSig -HashAlgorithm $HashAlgorithm -SigningCertificate $SigningCertificate
+            if ($PSCmdlet.ParameterSetName -eq "RSA") 
+            {
+                $rsaSig = New-JwtSignature -JsonWebToken $jwtSansSig -HashAlgorithm $HashAlgorithm -SigningCertificate $SigningCertificate
+            }
+            else
+            {
+                $rsaSig = New-JwtSignature -JsonWebToken $jwtSansSig -HashAlgorithm $HashAlgorithm -PrivateKey $PrivateKey
+            }
+
 
             #5. Construct jws:
             $jwt = "{0}.{1}" -f $jwtSansSig, $rsaSig
